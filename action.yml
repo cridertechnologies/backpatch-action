@@ -8,7 +8,7 @@ branding:
 
 inputs:
   api-key:
-    description: 'Backpatch API key. Store it as a repository secret and pass it as ${{ secrets.BACKPATCH_API_KEY }}. Every API request requires one — start a trial at https://backpatch.dev/#pricing.'
+    description: 'Backpatch API key. Store it as a repository secret and pass that secret to this input. Every API request requires one — start a trial at https://backpatch.dev/#pricing.'
     required: true
   working-directory:
     description: 'Directory to resolve package-json and lockfile against.'

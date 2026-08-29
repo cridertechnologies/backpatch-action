@@ -4,21 +4,40 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+
+# The Action only reads repository files and calls the mock HTTP service.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   action:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
       - name: Start the mock API
+        shell: bash
         run: |
-          node test/mock-api.mjs & echo "MOCK_PID=$!" >> "$GITHUB_ENV"
+          set -euo pipefail
+          node test/mock-api.mjs >"$RUNNER_TEMP/backpatch-mock.log" 2>&1 &
+          echo "MOCK_PID=$!" >> "$GITHUB_ENV"
+
           for _ in $(seq 1 20); do
-            curl -sf -o /dev/null -X POST -H 'X-API-Key: t' http://localhost:4599/analyze_overrides \
-              -d '{"packageJson":"{}"}' && break
+            if curl --fail --silent --show-error --output /dev/null               --request POST               --header 'X-API-Key: t'               --header 'Content-Type: application/json'               --data '{"packageJson":"{}"}'               http://localhost:4599/analyze_overrides; then
+              exit 0
+            fi
             sleep 0.5
           done
+
+          echo "Mock API did not become ready." >&2
+          cat "$RUNNER_TEMP/backpatch-mock.log" >&2 || true
+          exit 1
 
       # Exercises the action exactly as a consumer would, against the fixture.
       - name: Run the action
@@ -30,6 +49,7 @@ jobs:
           api-url: http://localhost:4599
 
       - name: Assert the outputs
+        shell: bash
         run: |
           set -euo pipefail
           test "${{ steps.backpatch.outputs.total-count }}" = "2"
@@ -39,14 +59,16 @@ jobs:
 
       # A missing key must fail the step, not silently pass.
       - name: Assert a missing key fails
+        shell: bash
         run: |
-          set -uo pipefail
-          BACKPATCH_INPUT_API_KEY="" \
-          BACKPATCH_INPUT_API_URL=http://localhost:4599 \
-          BACKPATCH_INPUT_WORKING_DIRECTORY=test/fixtures \
-            node scripts/analyze.mjs && { echo "expected a failure"; exit 1; }
+          set -euo pipefail
+          if BACKPATCH_INPUT_API_KEY=""             BACKPATCH_INPUT_API_URL=http://localhost:4599             BACKPATCH_INPUT_WORKING_DIRECTORY=test/fixtures             node scripts/analyze.mjs; then
+            echo "expected a failure" >&2
+            exit 1
+          fi
           echo "failed as expected"
 
       - name: Stop the mock API
         if: always()
+        shell: bash
         run: kill "$MOCK_PID" || true
