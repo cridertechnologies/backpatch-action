@@ -134,5 +134,4 @@ you need byte-for-byte reproducibility.
 
 ## License
 
-MIT. The analysis engine and API live in
-[dmcrider/Backpatch-mcp](https://github.com/dmcrider/Backpatch-mcp).
+MIT. See [LICENSE](./LICENSE)
