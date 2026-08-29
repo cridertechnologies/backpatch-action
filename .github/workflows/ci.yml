@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the mock API
+        run: |
+          node test/mock-api.mjs & echo "MOCK_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 20); do
+            curl -sf -o /dev/null -X POST -H 'X-API-Key: t' http://localhost:4599/analyze_overrides \
+              -d '{"packageJson":"{}"}' && break
+            sleep 0.5
+          done
+
+      # Exercises the action exactly as a consumer would, against the fixture.
+      - name: Run the action
+        id: backpatch
+        uses: ./
+        with:
+          api-key: bp_test_key
+          working-directory: test/fixtures
+          api-url: http://localhost:4599
+
+      - name: Assert the outputs
+        run: |
+          set -euo pipefail
+          test "${{ steps.backpatch.outputs.total-count }}" = "2"
+          test "${{ steps.backpatch.outputs.removable-count }}" = "1"
+          test "${{ steps.backpatch.outputs.still-needed-count }}" = "1"
+          echo '${{ steps.backpatch.outputs.results }}' | jq -e '.[0].packageName == "tough-cookie"'
+
+      # A missing key must fail the step, not silently pass.
+      - name: Assert a missing key fails
+        run: |
+          set -uo pipefail
+          BACKPATCH_INPUT_API_KEY="" \
+          BACKPATCH_INPUT_API_URL=http://localhost:4599 \
+          BACKPATCH_INPUT_WORKING_DIRECTORY=test/fixtures \
+            node scripts/analyze.mjs && { echo "expected a failure"; exit 1; }
+          echo "failed as expected"
+
+      - name: Stop the mock API
+        if: always()
+        run: kill "$MOCK_PID" || true

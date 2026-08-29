@@ -1,0 +1,73 @@
+name: 'Backpatch override cleanup'
+description: 'Report which package.json overrides can now be safely removed by upgrading a parent dependency.'
+author: 'Crider Technologies'
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  api-key:
+    description: 'Backpatch API key. Store it as a repository secret and pass it as ${{ secrets.BACKPATCH_API_KEY }}. Every API request requires one — start a trial at https://backpatch.dev/#pricing.'
+    required: true
+  working-directory:
+    description: 'Directory to resolve package-json and lockfile against.'
+    required: false
+    default: '.'
+  package-json:
+    description: 'Path to the package.json to analyze, relative to working-directory.'
+    required: false
+    default: 'package.json'
+  lockfile:
+    description: 'Optional path to a package-lock.json or yarn.lock, relative to working-directory. Passing one makes the analysis more precise.'
+    required: false
+    default: ''
+  allow-major-bump:
+    description: 'Treat overrides that only clear behind a breaking major upgrade of a parent as removable. Off by default — those are reported as NeedsMajorUpgrade instead.'
+    required: false
+    default: 'false'
+  fail-on:
+    description: 'When to fail the job: "never" (default — report only), or "removable" (fail if any override can be removed, to enforce cleanup).'
+    required: false
+    default: 'never'
+  summary:
+    description: 'Write a table to the job summary.'
+    required: false
+    default: 'true'
+  api-url:
+    description: 'Base URL of the Backpatch API. Override only for self-hosted deployments.'
+    required: false
+    default: 'https://api.backpatch.dev'
+
+outputs:
+  removable-count:
+    description: 'Number of overrides reported as SafeToRemove.'
+    value: ${{ steps.backpatch.outputs.removable-count }}
+  needs-major-count:
+    description: 'Number of overrides removable only behind a major parent upgrade.'
+    value: ${{ steps.backpatch.outputs.needs-major-count }}
+  still-needed-count:
+    description: 'Number of overrides still doing real work.'
+    value: ${{ steps.backpatch.outputs.still-needed-count }}
+  total-count:
+    description: 'Number of override entries analyzed.'
+    value: ${{ steps.backpatch.outputs.total-count }}
+  results:
+    description: 'Full analysis result as a JSON array.'
+    value: ${{ steps.backpatch.outputs.results }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: backpatch
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/scripts/analyze.mjs"
+      env:
+        BACKPATCH_INPUT_API_KEY: ${{ inputs.api-key }}
+        BACKPATCH_INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        BACKPATCH_INPUT_PACKAGE_JSON: ${{ inputs.package-json }}
+        BACKPATCH_INPUT_LOCKFILE: ${{ inputs.lockfile }}
+        BACKPATCH_INPUT_ALLOW_MAJOR_BUMP: ${{ inputs.allow-major-bump }}
+        BACKPATCH_INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        BACKPATCH_INPUT_SUMMARY: ${{ inputs.summary }}
+        BACKPATCH_INPUT_API_URL: ${{ inputs.api-url }}
